@@ -1,0 +1,120 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+
+namespace Serv
+{
+    internal class Program
+    {
+       
+
+        static async Task Main(string[] args)
+        {
+            Console.InputEncoding = Encoding.UTF8;
+            Console.OutputEncoding = Encoding.UTF8;
+
+            Socket listener = new Socket
+                (AddressFamily.InterNetwork,
+                SocketType.Stream,
+                ProtocolType.Tcp);
+
+            listener.Bind(new IPEndPoint(IPAddress.Any, 5000));
+            listener.Listen(10);
+            Console.WriteLine("Сервер запущений на порту 5000...");
+            Console.WriteLine("Очікую на підключення клієнтів...");
+
+            while (true)
+            {
+                Socket client = await listener.AcceptAsync();
+                _ = HandleClientAsync(client);
+            }
+        }
+
+        private static async Task HandleClientAsync(Socket client)
+        {
+            string userName = "Анонім";
+
+            try
+            {
+                var buffer = new byte[1024];
+                while (client.Connected)
+                {
+                    int bytes = await client.ReceiveAsync(buffer, SocketFlags.None);
+
+                    if (bytes == 0) break;
+
+                    string msg = Encoding.UTF8.GetString(buffer, 0, bytes);
+
+                   
+                    if (msg.StartsWith("USER:"))
+                    {
+                        
+                        userName = msg.Substring(5).Trim(); 
+                        Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Клієнт підключився як: {userName}");
+
+                        
+                        string welcomeMsg = $"СЕРВЕР: Ласкаво просимо, {userName}!";
+                        await client.SendAsync(Encoding.UTF8.GetBytes(welcomeMsg));
+                    }
+                    else if (msg.StartsWith("CHAT:"))
+                    {
+                        
+                        string chatText = msg.Substring(5).Trim();
+                        string fullMessage = $"[{userName}]: {chatText}";
+
+                        
+                        Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Нове повідомлення в чаті: {fullMessage}");
+
+                        
+                        await client.SendAsync(Encoding.UTF8.GetBytes("СЕРВЕР: Ваше повідомлення отримано."));
+                    }
+                    else if (msg.Equals("UPDATE_CHAT"))
+                    {
+                      
+                        string updateResponse = "СЕРВЕР: Немає нових повідомлень (історія чату не зберігається).";
+                        await client.SendAsync(Encoding.UTF8.GetBytes(updateResponse));
+                        Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Клієнт {userName} запросив оновлення. Відправлено: \"{updateResponse}\"");
+                    }
+                    else
+                    {
+                        
+                        await client.SendAsync(Encoding.UTF8.GetBytes("СЕРВЕР: Невідома команда."));
+                        Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Від {userName} отримана невідома команда: {msg}");
+                    }
+                }
+            }
+            catch (SocketException ex)
+            {
+                
+                if (ex.SocketErrorCode != SocketError.ConnectionReset && ex.SocketErrorCode != SocketError.TimedOut)
+                {
+                    Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Помилка сокету для {userName}: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Непередбачена помилка для {userName}: {ex.Message}");
+            }
+            finally
+            {
+                
+                if (client.Connected)
+                {
+                    try
+                    {
+                        client.Shutdown
+                            (SocketShutdown.Both); 
+                    }
+
+                    catch
+                    {
+
+                    } 
+                }
+                client.Close(); 
+                Console.WriteLine($"[{Thread.CurrentThread.ManagedThreadId}] Клієнт {userName} відключився.");
+            }
+        }
+    }
+}
